@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@utility btn-num {
+  @apply bg-slate-800/80 hover:bg-slate-700/80 text-slate-100 font-medium py-3 rounded-xl text-lg transition active:scale-95 border border-slate-700/50 shadow-sm cursor-pointer;
+}
+
+@utility btn-op {
+  @apply bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold py-3 rounded-xl text-lg transition active:scale-95 shadow-md shadow-emerald-900/20 cursor-pointer;
+}
+
+@utility btn-sci {
+  @apply bg-slate-900/60 hover:bg-slate-800 border border-slate-700/60 text-sky-400 font-medium py-3 rounded-xl text-sm transition active:scale-95 cursor-pointer;
+}
+
+@utility btn-action {
+  @apply bg-slate-900/60 hover:bg-slate-800 border border-slate-700/60 text-slate-300 font-medium py-3 rounded-xl text-sm transition active:scale-95 cursor-pointer;
+}
+
+@utility btn-equal {
+  @apply bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3 rounded-xl text-lg transition active:scale-95 shadow-md shadow-emerald-900/30 cursor-pointer;
+}
