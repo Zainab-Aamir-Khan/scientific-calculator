@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
-import { Delete, History } from 'lucide-react';
+import { Delete, History, Trash2 } from 'lucide-react';
+import { create, all } from 'mathjs';
+
+// Configure mathjs instance
+const math = create(all);
 
 export default function ScientificCalculator() {
   const [display, setDisplay] = useState('0');
@@ -8,6 +12,7 @@ export default function ScientificCalculator() {
   const [isDegree, setIsDegree] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
 
+  // Append digits and operators
   const handleInput = (val) => {
     if (display === '0' || display === 'Error') {
       setDisplay(val);
@@ -38,38 +43,6 @@ export default function ScientificCalculator() {
     }
   };
 
-  const evaluateMath = (expr) => {
-    try {
-      let parsed = expr
-        .replace(/×/g, '*')
-        .replace(/÷/g, '/')
-        .replace(/π/g, 'Math.PI')
-        .replace(/e/g, 'Math.E')
-        .replace(/\^/g, '**');
-
-      const toRad = (angle) => (isDegree ? (angle * Math.PI) / 180 : angle);
-
-      const func = new Function(
-        'sin', 'cos', 'tan', 'sqrt', 'log', 'ln', 'toRad',
-        `return ${parsed};`
-      );
-
-      const sin = (x) => Math.sin(toRad(x));
-      const cos = (x) => Math.cos(toRad(x));
-      const tan = (x) => Math.tan(toRad(x));
-      const sqrt = (x) => Math.sqrt(x);
-      const log = (x) => Math.log10(x);
-      const ln = (x) => Math.log(x);
-
-      const result = func(sin, cos, tan, sqrt, log, ln, toRad);
-
-      if (isNaN(result) || !isFinite(result)) return 'Error';
-      return Number(result.toFixed(8)).toString();
-    } catch (err) {
-      return 'Error';
-    }
-  };
-
   const handleScientificFunc = (funcName) => {
     if (display === 'Error') return;
     if (display === '0') {
@@ -79,26 +52,80 @@ export default function ScientificCalculator() {
     }
   };
 
+  // Safe & Robust Math Evaluator
+  const evaluateMath = (expr) => {
+    try {
+      // 1. Prepare expression string for mathjs parsing
+      let cleaned = expr
+        .replace(/×/g, '*')
+        .replace(/÷/g, '/')
+        .replace(/π/g, 'pi')
+        .replace(/√\(/g, 'sqrt(');
+
+      // Auto-close missing brackets
+      const openBrackets = (cleaned.match(/\(/g) || []).length;
+      const closeBrackets = (cleaned.match(/\)/g) || []).length;
+      if (openBrackets > closeBrackets) {
+        cleaned += ')'.repeat(openBrackets - closeBrackets);
+      }
+
+      // 2. Trigonometric angle conversion for DEG mode
+      // If DEG mode is active, wrap angle arguments inside sin/cos/tan in deg-to-rad conversion
+      let processedExpr = cleaned;
+      if (isDegree) {
+        processedExpr = processedExpr
+          .replace(/sin\(([^)]+)\)/g, 'sin(($1) * deg)')
+          .replace(/cos\(([^)]+)\)/g, 'cos(($1) * deg)')
+          .replace(/tan\(([^)]+)\)/g, 'tan(($1) * deg)');
+      }
+
+      // 3. Evaluate using mathjs scope
+      const scope = {
+        deg: Math.PI / 180
+      };
+
+      const result = math.evaluate(processedExpr, scope);
+
+      if (typeof result === 'undefined' || result === null || isNaN(result)) {
+        return 'Error';
+      }
+
+      // Format result to round off floating-point inaccuracies
+      return math.format(result, { precision: 10 }).toString();
+    } catch (err) {
+      return 'Error';
+    }
+  };
+
   const handleEqual = () => {
     if (display === 'Error') return;
+
     const res = evaluateMath(display);
-    setEquation(`${display} =`);
     
     if (res !== 'Error') {
-      setHistory((prev) => [{ eq: display, res }, ...prev.slice(0, 9)]);
+      const newEntry = { eq: display, res };
+      setHistory((prev) => [newEntry, ...prev.slice(0, 19)]);
+      setEquation(`${display} =`);
+      setDisplay(res);
+    } else {
+      setDisplay('Error');
     }
-    setDisplay(res);
+  };
+
+  const restoreHistoryItem = (item) => {
+    setDisplay(item.res);
+    setEquation(`${item.eq} =`);
   };
 
   return (
     <div className="flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-md bg-slate-800/90 rounded-3xl shadow-2xl overflow-hidden border border-slate-700/80">
+      <div className="w-full max-w-md bg-slate-800/90 rounded-3xl shadow-2xl overflow-hidden border border-slate-700/80 relative">
         
         {/* Header Control Bar */}
         <div className="flex items-center justify-between px-5 py-3 bg-slate-900/50 border-b border-slate-700/50 text-xs font-semibold">
           <button
             onClick={() => setIsDegree(!isDegree)}
-            className={`px-3 py-1 rounded-lg transition font-mono ${
+            className={`px-3 py-1 rounded-lg transition font-mono cursor-pointer ${
               isDegree 
                 ? 'bg-emerald-500 text-slate-950 font-bold' 
                 : 'bg-slate-800 text-slate-400 border border-slate-700'
@@ -106,16 +133,18 @@ export default function ScientificCalculator() {
           >
             {isDegree ? 'DEG' : 'RAD'}
           </button>
+
           <button
             onClick={() => setShowHistory(!showHistory)}
-            className="p-1.5 hover:bg-slate-800 rounded-lg transition text-slate-400 hover:text-emerald-400"
-            title="Toggle History"
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg hover:bg-slate-800 transition text-slate-300 hover:text-emerald-400 cursor-pointer border border-slate-700/40"
+            title="Toggle Calculation History"
           >
-            <History className="w-4 h-4" />
+            <History className="w-3.5 h-3.5 text-emerald-400" />
+            <span>History ({history.length})</span>
           </button>
         </div>
 
-        {/* Display */}
+        {/* Display Area */}
         <div className="p-6 text-right bg-slate-950 min-h-[120px] flex flex-col justify-between border-b border-slate-800">
           <div className="text-emerald-400/80 text-sm h-6 font-mono overflow-x-auto tracking-wide">{equation}</div>
           <div className="text-3xl sm:text-4xl font-bold font-mono text-white tracking-wider overflow-x-auto">
@@ -125,22 +154,36 @@ export default function ScientificCalculator() {
 
         {/* History Drawer */}
         {showHistory && (
-          <div className="p-4 bg-slate-900 border-b border-slate-700 max-h-40 overflow-y-auto text-xs font-mono">
-            <div className="text-slate-400 font-sans mb-2 font-semibold uppercase tracking-wider text-[10px]">Recent Calculations</div>
+          <div className="p-4 bg-slate-900 border-b border-slate-700 max-h-56 overflow-y-auto text-xs font-mono space-y-2">
+            <div className="flex items-center justify-between text-slate-400 font-sans pb-1 border-b border-slate-800 font-semibold uppercase tracking-wider text-[10px]">
+              <span>Calculation History</span>
+              {history.length > 0 && (
+                <button
+                  onClick={() => setHistory([])}
+                  className="flex items-center gap-1 text-rose-400 hover:text-rose-300 cursor-pointer"
+                >
+                  <Trash2 className="w-3 h-3" /> Clear All
+                </button>
+              )}
+            </div>
             {history.length === 0 ? (
-              <div className="text-slate-500 py-1">No history available yet.</div>
+              <div className="text-slate-500 py-3 text-center font-sans">No history saved yet.</div>
             ) : (
               history.map((item, idx) => (
-                <div key={idx} className="flex justify-between py-1.5 border-b border-slate-800 last:border-0">
-                  <span className="text-slate-300">{item.eq}</span>
-                  <span className="text-emerald-400 font-bold">{item.res}</span>
+                <div
+                  key={idx}
+                  onClick={() => restoreHistoryItem(item)}
+                  className="flex justify-between items-center py-2 px-2 rounded hover:bg-slate-800/80 cursor-pointer transition border border-transparent hover:border-slate-700/50"
+                >
+                  <span className="text-slate-400 truncate max-w-[60%]">{item.eq}</span>
+                  <span className="text-emerald-400 font-bold font-mono">{item.res}</span>
                 </div>
               ))
             )}
           </div>
         )}
 
-        {/* Keypad */}
+        {/* Keypad Grid */}
         <div className="p-4 grid grid-cols-5 gap-2 bg-slate-800/90">
           <button onClick={() => handleScientificFunc('sin')} className="btn-sci">sin</button>
           <button onClick={() => handleScientificFunc('cos')} className="btn-sci">cos</button>
