@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { Delete, History, Trash2 } from 'lucide-react';
 import { create, all } from 'mathjs';
 
-// Configure mathjs instance
-const math = create(all);
+const math = create(all, {
+  number: 'number',
+  precision: 14,
+});
 
 export default function ScientificCalculator() {
   const [display, setDisplay] = useState('0');
@@ -11,87 +13,139 @@ export default function ScientificCalculator() {
   const [history, setHistory] = useState([]);
   const [isDegree, setIsDegree] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
+  const [justEvaluated, setJustEvaluated] = useState(false);
 
-  // Append digits and operators
+  const resetAfterEvalIfNeeded = (val) => {
+    if (display === 'Error') {
+      setDisplay(val);
+      setEquation('');
+      setJustEvaluated(false);
+      return true;
+    }
+
+    if (justEvaluated && /[0-9\.πe(√]/.test(val)) {
+      setDisplay(val);
+      setEquation('');
+      setJustEvaluated(false);
+      return true;
+    }
+
+    return false;
+  };
+
   const handleInput = (val) => {
-    if (display === '0' || display === 'Error') {
+    if (resetAfterEvalIfNeeded(val)) return;
+
+    if (display === '0' && val !== '.') {
       setDisplay(val);
     } else {
       setDisplay((prev) => prev + val);
     }
+
+    setJustEvaluated(false);
   };
 
   const handleClear = () => {
     setDisplay('0');
     setEquation('');
+    setJustEvaluated(false);
   };
 
   const handleDelete = () => {
-    if (display.length > 1 && display !== 'Error') {
+    if (display === 'Error') {
+      setDisplay('0');
+      setJustEvaluated(false);
+      return;
+    }
+
+    if (display.length > 1) {
       setDisplay((prev) => prev.slice(0, -1));
     } else {
       setDisplay('0');
     }
+
+    setJustEvaluated(false);
   };
 
   const toggleSign = () => {
     if (display === '0' || display === 'Error') return;
-    if (display.startsWith('-')) {
+
+    // Toggle negation on the current entire display or wrap in negation
+    if (display.startsWith('-(') && display.endsWith(')')) {
+      setDisplay((prev) => prev.slice(2, -1));
+    } else if (display.startsWith('-')) {
       setDisplay((prev) => prev.slice(1));
     } else {
-      setDisplay((prev) => '-' + prev);
+      setDisplay((prev) => `-(${prev})`);
+    }
+    setJustEvaluated(false);
+  };
+
+  const handleScientificFunc = (funcSymbol) => {
+    if (display === 'Error' || justEvaluated) {
+      setDisplay(`${funcSymbol}(`);
+      setEquation('');
+      setJustEvaluated(false);
+      return;
+    }
+
+    if (display === '0') {
+      setDisplay(`${funcSymbol}(`);
+    } else {
+      setDisplay((prev) => `${prev}${funcSymbol}(`);
     }
   };
 
-  const handleScientificFunc = (funcName) => {
-    if (display === 'Error') return;
-    if (display === '0') {
-      setDisplay(`${funcName}(`);
-    } else {
-      setDisplay((prev) => `${prev}${funcName}(`);
+  const wrapTrigDegrees = (input) => {
+    if (!isDegree) return input;
+    const regex = /(sin|cos|tan)\(([^()]+)\)/g;
+    let output = input;
+    while (regex.test(output)) {
+      output = output.replace(regex, '$1(($2) * deg)');
     }
+    return output;
   };
 
   // Safe & Robust Math Evaluator
   const evaluateMath = (expr) => {
     try {
-      // 1. Prepare expression string for mathjs parsing
+      // 1. Clean visual symbols into mathjs syntax
       let cleaned = expr
         .replace(/×/g, '*')
         .replace(/÷/g, '/')
         .replace(/π/g, 'pi')
-        .replace(/√\(/g, 'sqrt(');
+        .replace(/√\(/g, 'sqrt(')
+        .replace(/\bln\(/g, 'log(')       // Natural log in mathjs is log()
+        .replace(/\blog\(/g, 'log10(');   // Base 10 log in mathjs is log10()
 
-      // Auto-close missing brackets
+      // 2. Handle implicit multiplication (e.g., 2pi -> 2*pi, 3e -> 3*e, 4(5) -> 4*(5))
+      cleaned = cleaned
+        .replace(/(\d|\))\s*(pi|e|sqrt|sin|cos|tan|log|log10|\()/g, '$1*$2')
+        .replace(/(pi|e)\s*(\d|\()/g, '$1*$2');
+
+      // 3. Auto-close missing trailing brackets
       const openBrackets = (cleaned.match(/\(/g) || []).length;
       const closeBrackets = (cleaned.match(/\)/g) || []).length;
       if (openBrackets > closeBrackets) {
         cleaned += ')'.repeat(openBrackets - closeBrackets);
       }
 
-      // 2. Trigonometric angle conversion for DEG mode
-      // If DEG mode is active, wrap angle arguments inside sin/cos/tan in deg-to-rad conversion
-      let processedExpr = cleaned;
-      if (isDegree) {
-        processedExpr = processedExpr
-          .replace(/sin\(([^)]+)\)/g, 'sin(($1) * deg)')
-          .replace(/cos\(([^)]+)\)/g, 'cos(($1) * deg)')
-          .replace(/tan\(([^)]+)\)/g, 'tan(($1) * deg)');
-      }
+      // 4. Trigonometric DEG conversion
+      const processedExpr = wrapTrigDegrees(cleaned);
 
-      // 3. Evaluate using mathjs scope
+      // 5. Evaluate using mathjs scope
       const scope = {
-        deg: Math.PI / 180
+        deg: Math.PI / 180,
       };
 
       const result = math.evaluate(processedExpr, scope);
 
-      if (typeof result === 'undefined' || result === null || isNaN(result)) {
+      if (typeof result === 'undefined' || result === null || Number.isNaN(result)) {
         return 'Error';
       }
 
-      // Format result to round off floating-point inaccuracies
-      return math.format(result, { precision: 10 }).toString();
+      // Format floating point precision cleanly
+      return math.format(result, { precision: 12 }).toString();
     } catch (err) {
       return 'Error';
     }
@@ -101,20 +155,23 @@ export default function ScientificCalculator() {
     if (display === 'Error') return;
 
     const res = evaluateMath(display);
-    
+
     if (res !== 'Error') {
       const newEntry = { eq: display, res };
       setHistory((prev) => [newEntry, ...prev.slice(0, 19)]);
       setEquation(`${display} =`);
       setDisplay(res);
+      setJustEvaluated(true);
     } else {
       setDisplay('Error');
+      setJustEvaluated(false);
     }
   };
 
   const restoreHistoryItem = (item) => {
     setDisplay(item.res);
     setEquation(`${item.eq} =`);
+    setJustEvaluated(true);
   };
 
   return (
@@ -191,7 +248,7 @@ export default function ScientificCalculator() {
           <button onClick={handleClear} className="btn-action text-rose-400 hover:text-rose-300">AC</button>
           <button onClick={handleDelete} className="btn-action"><Delete className="w-4 h-4 mx-auto" /></button>
 
-          <button onClick={() => handleScientificFunc('sqrt')} className="btn-sci">√</button>
+          <button onClick={() => handleScientificFunc('√')} className="btn-sci">√</button>
           <button onClick={() => handleInput('^')} className="btn-sci">xⁿ</button>
           <button onClick={() => handleScientificFunc('log')} className="btn-sci">log</button>
           <button onClick={() => handleInput('(')} className="btn-sci">(</button>
